@@ -1,11 +1,8 @@
 """
-elbo.py
--------
 Implements the Evidence Lower Bound (ELBO) for DDPM, decomposed into
 per-timestep terms L_t, each a function of beta_t via the SNR.
 
 MATHEMATICAL DERIVATION
------------------------
 The ELBO for a DDPM is (Ho et al., 2020):
 
     log p(x_0) >= ELBO = E_q [ log p(x_0|x_1) ]
@@ -31,7 +28,6 @@ i.e., a "schedule proxy" loss), the per-timestep loss is:
 where d is the data dimensionality and sigma_t^2 = 1 - alpha_bar_t.
 
 CONVEXITY ANALYSIS
-------------------
 Let f(beta_t) = L_t(beta_t) be the per-step loss.
 
 Under the Gaussian noise model:
@@ -64,12 +60,10 @@ def compute_elbo_terms(process: DDPMProcess, d: int = 1) -> np.ndarray:
     which is the KL divergence proxy for Gaussian denoising.
 
     Parameters
-    ----------
     process : DDPMProcess
     d       : int — data dimensionality (scalar proxy = 1)
 
     Returns
-    -------
     L : np.ndarray of shape (T,)  — per-timestep losses
     """
     sigma_sq = process.sigma_sq  # (1 - alpha_bar_t), shape (T,)
@@ -86,12 +80,10 @@ def compute_total_elbo(process: DDPMProcess, d: int = 1) -> float:
     Compute the total negative ELBO: sum_t L_t(beta_t).
 
     Parameters
-    ----------
     process : DDPMProcess
     d       : int — data dimensionality
 
     Returns
-    -------
     total_loss : float
     """
     return float(np.sum(compute_elbo_terms(process, d)))
@@ -102,7 +94,6 @@ def compute_gradient(beta: np.ndarray, d: int = 1) -> np.ndarray:
     Compute the gradient of the total ELBO loss with respect to beta.
 
     DERIVATION:
-    -----------
     Let sigma_sq_t = 1 - alpha_bar_t = 1 - prod_{s=1}^{t} (1 - beta_s).
 
     d(sigma_sq_t) / d(beta_s) = prod_{u=1, u≠s}^{t} (1-beta_u) = alpha_bar_t / (1-beta_s)
@@ -117,12 +108,10 @@ def compute_gradient(beta: np.ndarray, d: int = 1) -> np.ndarray:
     d(sum_t L_t) / d(beta_s) = sum_{t >= s} dL_t/d(beta_s)
 
     Parameters
-    ----------
     beta : np.ndarray of shape (T,)
     d    : int — data dimensionality
 
     Returns
-    -------
     grad : np.ndarray of shape (T,)
     """
     T = len(beta)
@@ -154,12 +143,10 @@ def compute_gradient_fast(beta: np.ndarray, d: int = 1) -> np.ndarray:
     Same derivation as compute_gradient, but O(T) instead of O(T^2).
 
     Parameters
-    ----------
     beta : np.ndarray of shape (T,)
     d    : int
 
     Returns
-    -------
     grad : np.ndarray of shape (T,)
     """
     T = len(beta)
@@ -186,13 +173,11 @@ def finite_difference_gradient(beta: np.ndarray, d: int = 1, eps: float = 1e-5) 
     Numerical gradient via central finite differences — used for validation.
 
     Parameters
-    ----------
     beta : np.ndarray of shape (T,)
     d    : int
     eps  : float — perturbation size
 
     Returns
-    -------
     grad_fd : np.ndarray of shape (T,)
     """
     T = len(beta)
