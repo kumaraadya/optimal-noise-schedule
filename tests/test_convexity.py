@@ -122,10 +122,8 @@ class TestProjection:
         beta_proj = project_to_feasible(beta)
         assert beta_proj.shape == beta.shape
 
-# ══════════════════════════════════════════════════════════════
-# DIFFUSION MODEL TESTS
-# ══════════════════════════════════════════════════════════════
 
+# DIFFUSION MODEL TESTS
 class TestDiffusionModel:
 
     def test_alpha_bar_shape(self):
@@ -196,10 +194,7 @@ class TestDiffusionModel:
             "Updating schedule should change sigma_sq"
 
 
-# ══════════════════════════════════════════════════════════════
 # ELBO TESTS
-# ══════════════════════════════════════════════════════════════
-
 class TestELBO:
 
     def test_elbo_positive(self):
@@ -256,3 +251,90 @@ class TestELBO:
         loss = compute_total_elbo(proc)
         assert loss > 0
         assert np.isfinite(loss)
+
+
+# PGD SOLVER TESTS
+class TestPGDSolver:
+
+    def test_pgd_reduces_loss(self):
+        """PGD must reduce loss below initial value."""
+        from src.pgd_solver import pgd_solver
+        from src.diffusion_model import DDPMProcess
+        from src.elbo import compute_total_elbo
+        beta_init  = linear_schedule(100)
+        init_loss  = compute_total_elbo(DDPMProcess(beta_init))
+        result     = pgd_solver(beta_init, lr=0.01,
+                                max_iters=300, verbose=False)
+        final_loss = result['losses'][-1]
+        assert final_loss < init_loss, \
+            "PGD must reduce ELBO below initial value"
+
+    def test_pgd_beats_linear_by_90_percent(self):
+        """PGD must reduce loss by at least 90% vs linear."""
+        from src.pgd_solver import pgd_solver
+        from src.diffusion_model import DDPMProcess
+        from src.elbo import compute_total_elbo
+        beta_init  = linear_schedule(100)
+        init_loss  = compute_total_elbo(DDPMProcess(beta_init))
+        result     = pgd_solver(beta_init, lr=0.01,
+                                max_iters=300, verbose=False)
+        final_loss = result['losses'][-1]
+        improvement = (init_loss - final_loss) / init_loss
+        assert improvement > 0.90, \
+            f"Expected >90% improvement, got {improvement:.1%}"
+
+    def test_pgd_output_monotone(self):
+        """PGD output schedule must be monotonically increasing."""
+        from src.pgd_solver import pgd_solver
+        result   = pgd_solver(linear_schedule(100), lr=0.01,
+                              max_iters=300, verbose=False)
+        beta_opt = result['beta_opt']
+        assert all(beta_opt[i] <= beta_opt[i+1]
+                   for i in range(len(beta_opt)-1)), \
+            "Optimized schedule must be monotone"
+
+    def test_pgd_output_bounds(self):
+        """PGD output must stay within [beta_start, beta_end]."""
+        from src.pgd_solver import pgd_solver
+        result   = pgd_solver(linear_schedule(100), lr=0.01,
+                              max_iters=300, verbose=False)
+        beta_opt = result['beta_opt']
+        assert beta_opt.min() >= 1e-4 - 1e-10
+        assert beta_opt.max() <= 0.02  + 1e-10
+
+    def test_pgd_returns_required_keys(self):
+        """PGD result dict must contain all required keys."""
+        from src.pgd_solver import pgd_solver
+        result = pgd_solver(linear_schedule(50), lr=0.01,
+                            max_iters=10, verbose=False)
+        required = {'beta_opt', 'losses', 'grad_norms',
+                    'converged', 'n_iters'}
+        assert required.issubset(result.keys())
+
+    def test_pgd_initialization_robustness(self):
+        """All initializations must converge to same loss (unimodal)."""
+        from src.pgd_solver import pgd_solver
+        losses = {}
+        for name, b in get_all_baselines(100).items():
+            r = pgd_solver(b, lr=0.01, max_iters=300, verbose=False)
+            losses[name] = r['losses'][-1]
+        loss_values = list(losses.values())
+        # All losses should be within 1% of each other
+        max_loss = max(loss_values)
+        min_loss = min(loss_values)
+        variation = (max_loss - min_loss) / min_loss
+        assert variation < 0.01, \
+            f"Initializations should converge to same loss, variation={variation:.4f}"
+
+    def test_pgd_momentum_matches_standard(self):
+        """PGD with momentum achieves same final loss as standard PGD."""
+        from src.pgd_solver import pgd_solver, pgd_with_momentum
+        beta_init  = linear_schedule(100)
+        r_std = pgd_solver(beta_init, lr=0.01,
+                           max_iters=300, verbose=False)
+        r_mom = pgd_with_momentum(beta_init, lr=0.01,
+                                  momentum=0.9, max_iters=300,
+                                  verbose=False)
+        diff = abs(r_std['losses'][-1] - r_mom['losses'][-1])
+        assert diff < 1.0, \
+            "Momentum PGD should reach same loss as standard PGD"
