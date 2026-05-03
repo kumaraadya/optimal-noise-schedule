@@ -121,3 +121,138 @@ class TestProjection:
         beta = np.random.uniform(1e-4, 0.02, 50)
         beta_proj = project_to_feasible(beta)
         assert beta_proj.shape == beta.shape
+
+# ══════════════════════════════════════════════════════════════
+# DIFFUSION MODEL TESTS
+# ══════════════════════════════════════════════════════════════
+
+class TestDiffusionModel:
+
+    def test_alpha_bar_shape(self):
+        """alpha_bar has correct shape."""
+        from src.diffusion_model import DDPMProcess
+        proc = DDPMProcess(linear_schedule(100))
+        assert proc.alpha_bar.shape == (100,)
+
+    def test_alpha_bar_decreasing(self):
+        """alpha_bar is monotonically decreasing (more noise over time)."""
+        from src.diffusion_model import DDPMProcess
+        proc = DDPMProcess(linear_schedule(100))
+        assert all(proc.alpha_bar[i] >= proc.alpha_bar[i+1]
+                   for i in range(len(proc.alpha_bar)-1))
+
+    def test_sigma_sq_increasing(self):
+        """sigma_sq is monotonically increasing (more noise over time)."""
+        from src.diffusion_model import DDPMProcess
+        proc = DDPMProcess(linear_schedule(100))
+        assert all(proc.sigma_sq[i] <= proc.sigma_sq[i+1]
+                   for i in range(len(proc.sigma_sq)-1))
+
+    def test_sigma_sq_range(self):
+        """sigma_sq values are in (0, 1)."""
+        from src.diffusion_model import DDPMProcess
+        proc = DDPMProcess(linear_schedule(100))
+        assert proc.sigma_sq.min() > 0
+        assert proc.sigma_sq.max() < 1
+
+    def test_alpha_plus_sigma_equals_one(self):
+        """alpha_bar + sigma_sq = 1 by definition."""
+        from src.diffusion_model import DDPMProcess
+        proc = DDPMProcess(linear_schedule(100))
+        assert np.allclose(proc.alpha_bar + proc.sigma_sq, 1.0)
+
+    def test_timestep_coupling(self):
+        """Changing beta[s] affects sigma_sq for ALL t >= s."""
+        from src.diffusion_model import DDPMProcess
+        beta1 = linear_schedule(10)
+        beta2 = beta1.copy()
+        beta2[2] += 0.005
+        proc1 = DDPMProcess(beta1)
+        proc2 = DDPMProcess(beta2)
+        affected = np.where(
+            np.abs(proc2.sigma_sq - proc1.sigma_sq) > 1e-10
+        )[0]
+        # Must affect timesteps 2,3,4,...,9 (all t >= 2)
+        assert list(affected) == list(range(2, 10)), \
+            "Coupling must propagate to all future timesteps"
+
+    def test_forward_sample_shape(self):
+        """Forward sample returns correct shape."""
+        from src.diffusion_model import DDPMProcess
+        proc = DDPMProcess(linear_schedule(100))
+        x0 = np.ones(10)
+        xt, eps = proc.forward_sample(x0, t=50)
+        assert xt.shape == x0.shape
+        assert eps.shape == x0.shape
+
+    def test_update_schedule(self):
+        """update_schedule correctly recomputes derived quantities."""
+        from src.diffusion_model import DDPMProcess
+        proc = DDPMProcess(linear_schedule(100))
+        old_loss = proc.sigma_sq.sum()
+        proc.update_schedule(linear_schedule(100) * 1.1)
+        new_loss = proc.sigma_sq.sum()
+        assert new_loss != old_loss, \
+            "Updating schedule should change sigma_sq"
+
+
+# ══════════════════════════════════════════════════════════════
+# ELBO TESTS
+# ══════════════════════════════════════════════════════════════
+
+class TestELBO:
+
+    def test_elbo_positive(self):
+        """ELBO loss is always positive."""
+        from src.diffusion_model import DDPMProcess
+        from src.elbo import compute_total_elbo
+        proc = DDPMProcess(linear_schedule(100))
+        loss = compute_total_elbo(proc)
+        assert loss > 0, "ELBO loss must be positive"
+
+    def test_elbo_cosine_less_than_linear(self):
+        """Cosine schedule has lower ELBO than linear (known result)."""
+        from src.diffusion_model import DDPMProcess
+        from src.elbo import compute_total_elbo
+        loss_linear = compute_total_elbo(DDPMProcess(linear_schedule(100)))
+        loss_cosine = compute_total_elbo(DDPMProcess(cosine_schedule(100)))
+        assert loss_cosine < loss_linear, \
+            "Cosine should have lower ELBO than linear at T=100"
+
+    def test_elbo_terms_shape(self):
+        """ELBO terms have correct shape."""
+        from src.diffusion_model import DDPMProcess
+        from src.elbo import compute_elbo_terms
+        proc = DDPMProcess(linear_schedule(100))
+        terms = compute_elbo_terms(proc)
+        assert terms.shape == (100,)
+
+    def test_gradient_sign(self):
+        """Gradient should be negative (loss decreases as beta increases)."""
+        from src.elbo import compute_gradient_fast
+        beta = linear_schedule(10)
+        grad = compute_gradient_fast(beta)
+        assert grad[0] < 0, \
+            "Gradient at beta[0] should be negative"
+
+    def test_gradient_relative_error(self):
+        """Analytical gradient matches finite differences within 5%."""
+        from src.elbo import compute_gradient_fast, finite_difference_gradient
+        beta      = linear_schedule(20)
+        grad_fast = compute_gradient_fast(beta)
+        grad_fd   = finite_difference_gradient(beta)
+        rel_error = np.max(
+            np.abs(grad_fast - grad_fd) / (np.abs(grad_fd) + 1e-8)
+        )
+        assert rel_error < 0.05, \
+            f"Relative gradient error {rel_error:.4f} exceeds 5% threshold"
+
+    @pytest.mark.parametrize("T", [50, 100, 500])
+    def test_elbo_various_T(self, T):
+        """ELBO is positive and finite for various T values."""
+        from src.diffusion_model import DDPMProcess
+        from src.elbo import compute_total_elbo
+        proc = DDPMProcess(linear_schedule(T))
+        loss = compute_total_elbo(proc)
+        assert loss > 0
+        assert np.isfinite(loss)
