@@ -338,3 +338,113 @@ class TestPGDSolver:
         diff = abs(r_std['losses'][-1] - r_mom['losses'][-1])
         assert diff < 1.0, \
             "Momentum PGD should reach same loss as standard PGD"
+        
+
+# FRANK-WOLFE SOLVER TESTS
+class TestFrankWolfe:
+
+    def test_lmo_is_monotone(self):
+        """LMO output must be non-decreasing."""
+        from src.frank_wolfe import linear_minimization_oracle
+        np.random.seed(42)
+        grad = np.random.randn(100)
+        s = linear_minimization_oracle(grad)
+        assert all(s[i] <= s[i+1] for i in range(len(s)-1)), \
+            "LMO output must be monotone non-decreasing"
+
+    def test_lmo_is_step_function(self):
+        """LMO output must be a step function (at most 2 unique values)."""
+        from src.frank_wolfe import linear_minimization_oracle
+        np.random.seed(42)
+        grad = np.random.randn(100)
+        s = linear_minimization_oracle(grad)
+        unique_vals = len(np.unique(np.round(s, 8)))
+        assert unique_vals <= 2, \
+            f"LMO must return a step function, got {unique_vals} unique values"
+
+    def test_lmo_boundary_values(self):
+        """LMO output must stay within [beta_start, beta_end]."""
+        from src.frank_wolfe import linear_minimization_oracle
+        grad = np.random.randn(100)
+        s = linear_minimization_oracle(grad, beta_start=1e-4, beta_end=0.02)
+        assert s.min() >= 1e-4 - 1e-10, "LMO values must be >= beta_start"
+        assert s.max() <= 0.02  + 1e-10, "LMO values must be <= beta_end"
+
+    def test_fw_reduces_loss(self):
+        """FW must reduce ELBO loss below linear baseline."""
+        from src.frank_wolfe import frank_wolfe_solver
+        from src.diffusion_model import DDPMProcess
+        from src.elbo import compute_total_elbo
+        beta_init  = linear_schedule(100)
+        init_loss  = compute_total_elbo(DDPMProcess(beta_init), d=1)
+        result     = frank_wolfe_solver(beta_init, d=1, max_iters=200,
+                                        step_rule='open_loop', verbose=False)
+        final_loss = result['losses'][-1]
+        assert final_loss < init_loss, \
+            "FW must reduce ELBO below initial value"
+
+    def test_fw_beats_linear_by_90_percent(self):
+        """FW must reduce loss by at least 90% vs linear baseline."""
+        from src.frank_wolfe import frank_wolfe_solver
+        from src.diffusion_model import DDPMProcess
+        from src.elbo import compute_total_elbo
+        beta_init  = linear_schedule(100)
+        init_loss  = compute_total_elbo(DDPMProcess(beta_init), d=1)
+        result     = frank_wolfe_solver(beta_init, d=1, max_iters=200,
+                                        step_rule='open_loop', verbose=False)
+        final_loss = result['losses'][-1]
+        improvement = (init_loss - final_loss) / init_loss
+        assert improvement > 0.90, \
+            f"Expected >90% improvement, got {improvement:.1%}"
+
+    def test_fw_duality_gap_decreases(self):
+        """Duality gap must decrease over iterations."""
+        from src.frank_wolfe import frank_wolfe_solver
+        result = frank_wolfe_solver(linear_schedule(100), d=1,
+                                     max_iters=100, step_rule='open_loop',
+                                     verbose=False)
+        gaps = result['gaps']
+        assert gaps[0] > gaps[-1], \
+            "Duality gap must decrease over FW iterations"
+
+    def test_fw_converges(self):
+        """FW must report converged=True within max_iters."""
+        from src.frank_wolfe import frank_wolfe_solver
+        result = frank_wolfe_solver(linear_schedule(100), d=1,
+                                     max_iters=200, step_rule='open_loop',
+                                     verbose=False)
+        assert result['converged'], \
+            "FW must converge within 200 iterations"
+
+    def test_fw_returns_required_keys(self):
+        """FW result dict must contain all required keys."""
+        from src.frank_wolfe import frank_wolfe_solver
+        result = frank_wolfe_solver(linear_schedule(50), d=1,
+                                     max_iters=10, verbose=False)
+        required = {'beta_opt', 'losses', 'gaps', 'converged', 'n_iters'}
+        assert required.issubset(result.keys())
+
+    def test_fw_line_search_matches_open_loop(self):
+        """Line search and open_loop must reach the same final loss."""
+        from src.frank_wolfe import frank_wolfe_solver
+        from src.diffusion_model import DDPMProcess
+        from src.elbo import compute_total_elbo
+        beta_init = linear_schedule(100)
+        r_ol = frank_wolfe_solver(beta_init, d=1, max_iters=200,
+                                   step_rule='open_loop',   verbose=False)
+        r_ls = frank_wolfe_solver(beta_init, d=1, max_iters=200,
+                                   step_rule='line_search', verbose=False)
+        diff = abs(r_ol['losses'][-1] - r_ls['losses'][-1])
+        assert diff < 1.0, \
+            f"Both step rules should reach same loss, diff={diff:.4f}"
+
+    def test_fw_cosine_init_matches_linear(self):
+        """FW from cosine init must reach same loss as from linear init."""
+        from src.frank_wolfe import frank_wolfe_solver
+        r_lin = frank_wolfe_solver(linear_schedule(100), d=1,
+                                    max_iters=200, verbose=False)
+        r_cos = frank_wolfe_solver(cosine_schedule(100), d=1,
+                                    max_iters=200, verbose=False)
+        diff = abs(r_lin['losses'][-1] - r_cos['losses'][-1])
+        assert diff < 1.0, \
+            f"Both inits should reach same loss, diff={diff:.4f}"
