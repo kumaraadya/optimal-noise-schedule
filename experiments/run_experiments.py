@@ -1,6 +1,4 @@
 """
-run_experiments.py
-------------------
 Main experiment pipeline for the noise schedule optimization project.
 
 Runs:
@@ -27,10 +25,7 @@ from src import (
     compute_fid_proxy, compute_nll_proxy, save_results, print_comparison_table
 )
 
-# ─────────────────────────────────────────────────────────────────────────────
 # Configuration
-# ─────────────────────────────────────────────────────────────────────────────
-
 RESULTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'results')
 FIGURES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'figures')
 os.makedirs(RESULTS_DIR, exist_ok=True)
@@ -44,9 +39,9 @@ D = 32 * 32  # CIFAR-10 proxy dimensionality (32x32 image)
 
 def run_baseline_evaluation(T: int):
     """Evaluate all baseline schedules for given T."""
-    print(f"\n{'─'*50}")
+    print(f"\n{'-'*50}")
     print(f"BASELINE EVALUATION (T={T})")
-    print('─'*50)
+    print('-'*50)
 
     baselines = get_all_baselines(T)
     baseline_results = {}
@@ -72,9 +67,9 @@ def run_baseline_evaluation(T: int):
 
 def run_pgd_optimization(T: int, beta_init_name: str = 'linear'):
     """Run PGD optimization starting from a given initial schedule."""
-    print(f"\n{'─'*50}")
+    print(f"\n{'-'*50}")
     print(f"PGD OPTIMIZATION (T={T}, init={beta_init_name})")
-    print('─'*50)
+    print('-'*50)
 
     if beta_init_name == 'linear':
         beta_init = linear_schedule(T, BETA_START, BETA_END)
@@ -107,9 +102,9 @@ def run_pgd_optimization(T: int, beta_init_name: str = 'linear'):
 
 def run_frank_wolfe_optimization(T: int):
     """Run Frank-Wolfe optimization."""
-    print(f"\n{'─'*50}")
+    print(f"\n{'-'*50}")
     print(f"FRANK-WOLFE OPTIMIZATION (T={T})")
-    print('─'*50)
+    print('-'*50)
 
     beta_init = linear_schedule(T, BETA_START, BETA_END)
 
@@ -121,9 +116,9 @@ def run_frank_wolfe_optimization(T: int):
 
 def run_slsqp_optimization(T: int):
     """Run SLSQP (interior-point) optimization."""
-    print(f"\n{'─'*50}")
+    print(f"\n{'-'*50}")
     print(f"SLSQP OPTIMIZATION (T={T})")
-    print('─'*50)
+    print('-'*50)
 
     res = cvxpy_solver_full(T, d=D, beta_start=BETA_START, beta_end=BETA_END, verbose=True)
     return {'SLSQP': res}
@@ -189,9 +184,9 @@ def compile_comparison(baselines: dict, baseline_results: dict,
 def generate_figures(baselines: dict, comparison: dict, pgd_results: dict,
                       fw_results: dict, T: int):
     """Generate and save all figures."""
-    print(f"\n{'─'*50}")
+    print(f"\n{'-'*50}")
     print("GENERATING FIGURES")
-    print('─'*50)
+    print('-'*50)
 
     # 1. All baseline schedules
     plot_schedules(baselines, T,
@@ -258,7 +253,7 @@ def run_for_T(T: int):
 
 if __name__ == '__main__':
     print("=" * 60)
-    print("OPTIMAL NOISE SCHEDULE LEARNING — EXPERIMENT PIPELINE")
+    print("OPTIMAL NOISE SCHEDULE LEARNING - EXPERIMENT PIPELINE")
     print("=" * 60)
 
     all_results = {}
