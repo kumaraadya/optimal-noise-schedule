@@ -448,3 +448,97 @@ class TestFrankWolfe:
         diff = abs(r_lin['losses'][-1] - r_cos['losses'][-1])
         assert diff < 1.0, \
             f"Both inits should reach same loss, diff={diff:.4f}"
+        
+
+# CVXPY / SLSQP SOLVER TESTS
+class TestCVXPYSolver:
+
+    def test_slsqp_reduces_loss(self):
+        """SLSQP must reduce ELBO loss below linear baseline."""
+        from src.cvxpy_solver import cvxpy_solver_full
+        from src.diffusion_model import DDPMProcess
+        from src.elbo import compute_total_elbo
+        beta_init = linear_schedule(100)
+        init_loss = compute_total_elbo(DDPMProcess(beta_init), d=1)
+        result    = cvxpy_solver_full(T=100, d=1, verbose=False)
+        final_loss = compute_total_elbo(DDPMProcess(result['beta_opt']), d=1)
+        assert final_loss < init_loss, \
+            "SLSQP must reduce ELBO below linear baseline"
+
+    def test_slsqp_beats_linear_by_90_percent(self):
+        """SLSQP must reduce loss by at least 90% vs linear."""
+        from src.cvxpy_solver import cvxpy_solver_full
+        from src.diffusion_model import DDPMProcess
+        from src.elbo import compute_total_elbo
+        beta_init  = linear_schedule(100)
+        init_loss  = compute_total_elbo(DDPMProcess(beta_init), d=1)
+        result     = cvxpy_solver_full(T=100, d=1, verbose=False)
+        final_loss = compute_total_elbo(DDPMProcess(result['beta_opt']), d=1)
+        improvement = (init_loss - final_loss) / init_loss
+        assert improvement > 0.90, \
+            f"Expected >90% improvement, got {improvement:.1%}"
+
+    def test_slsqp_output_monotone(self):
+        """SLSQP output schedule must be monotonically increasing."""
+        from src.cvxpy_solver import cvxpy_solver_full
+        result   = cvxpy_solver_full(T=100, d=1, verbose=False)
+        beta_opt = result['beta_opt']
+        assert all(beta_opt[i] <= beta_opt[i+1]
+                   for i in range(len(beta_opt)-1)), \
+            "SLSQP output must be monotone"
+
+    def test_slsqp_output_bounds(self):
+        """SLSQP output must stay within [beta_start, beta_end]."""
+        from src.cvxpy_solver import cvxpy_solver_full
+        result   = cvxpy_solver_full(T=100, d=1, verbose=False)
+        beta_opt = result['beta_opt']
+        assert beta_opt.min() >= 1e-4 - 1e-10
+        assert beta_opt.max() <= 0.02  + 1e-10
+
+    def test_slsqp_returns_required_keys(self):
+        """SLSQP result dict must contain all required keys."""
+        from src.cvxpy_solver import cvxpy_solver_full
+        result = cvxpy_solver_full(T=50, d=1, verbose=False)
+        required = {'beta_opt', 'status', 'optimal_value',
+                    'n_iters', 'solver'}
+        assert required.issubset(result.keys())
+
+    def test_slsqp_matches_pgd(self):
+        """SLSQP and PGD must reach the same final loss."""
+        from src.cvxpy_solver import cvxpy_solver_full
+        from src.pgd_solver import pgd_solver
+        from src.diffusion_model import DDPMProcess
+        from src.elbo import compute_total_elbo
+        r_slsqp    = cvxpy_solver_full(T=100, d=1, verbose=False)
+        r_pgd      = pgd_solver(linear_schedule(100), lr=0.01,
+                                max_iters=300, verbose=False)
+        loss_slsqp = compute_total_elbo(DDPMProcess(r_slsqp['beta_opt']), d=1)
+        loss_pgd   = r_pgd['losses'][-1]
+        diff       = abs(loss_slsqp - loss_pgd)
+        assert diff < 1.0, \
+            f"SLSQP and PGD should agree, diff={diff:.4f}"
+
+    def test_cvxpy_separable_reduces_loss(self):
+        """CVXPY separable solver must reduce ELBO below linear baseline."""
+        from src.cvxpy_solver import cvxpy_solver_separable
+        from src.diffusion_model import DDPMProcess
+        from src.elbo import compute_total_elbo
+        beta_init  = linear_schedule(100)
+        init_loss  = compute_total_elbo(DDPMProcess(beta_init), d=1)
+        result     = cvxpy_solver_separable(T=100, d=1, verbose=False)
+        if result['beta_opt'] is None:
+            pytest.skip("CVXPY not available")
+        final_loss = compute_total_elbo(DDPMProcess(result['beta_opt']), d=1)
+        assert final_loss < init_loss, \
+            "CVXPY separable must reduce ELBO below linear baseline"
+
+    def test_cvxpy_separable_monotone(self):
+        """CVXPY separable output must be monotone."""
+        from src.cvxpy_solver import cvxpy_solver_separable
+        result = cvxpy_solver_separable(T=100, d=1, verbose=False)
+        if result['beta_opt'] is None:
+            pytest.skip("CVXPY not available")
+        beta_opt = result['beta_opt']
+        assert all(beta_opt[i] <= beta_opt[i+1]
+                   for i in range(len(beta_opt)-1)), \
+            "CVXPY separable output must be monotone"
