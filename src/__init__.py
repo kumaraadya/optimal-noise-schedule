@@ -16,3 +16,4 @@ from .utils import (
     compute_fid_proxy, compute_nll_proxy,
     save_results, print_comparison_table,
 )
+from .convexity_analysis import run_full_convexity_analysis, compute_hessian_numerical

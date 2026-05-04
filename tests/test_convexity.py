@@ -542,3 +542,68 @@ class TestCVXPYSolver:
         assert all(beta_opt[i] <= beta_opt[i+1]
                    for i in range(len(beta_opt)-1)), \
             "CVXPY separable output must be monotone"
+        
+
+# CONVEXITY ANALYSIS TESTS
+class TestConvexityAnalysis:
+
+    def test_hessian_shape(self):
+        """Numerical Hessian must have correct shape."""
+        from src.convexity_analysis import compute_hessian_numerical
+        beta = linear_schedule(10)
+        H = compute_hessian_numerical(beta, eps=1e-4)
+        assert H.shape == (10, 10), "Hessian must be T x T"
+
+    def test_hessian_symmetric(self):
+        """Numerical Hessian must be symmetric."""
+        from src.convexity_analysis import compute_hessian_numerical
+        beta = linear_schedule(10)
+        H = compute_hessian_numerical(beta, eps=1e-4)
+        assert np.allclose(H, H.T, atol=1e-6), "Hessian must be symmetric"
+
+    def test_hessian_is_psd(self):
+        """Hessian at linear schedule must be PSD (convex)."""
+        from src.convexity_analysis import compute_hessian_numerical, check_psd
+        beta = linear_schedule(10)
+        H = compute_hessian_numerical(beta, eps=1e-4)
+        result = check_psd(H)
+        assert result['is_psd'], \
+            f"Hessian must be PSD, min eigenvalue={result['min_eigenval']:.4f}"
+
+    def test_min_eigenvalue_positive(self):
+        """Minimum eigenvalue must be strictly positive."""
+        from src.convexity_analysis import compute_hessian_numerical, check_psd
+        beta = linear_schedule(10)
+        H = compute_hessian_numerical(beta, eps=1e-4)
+        result = check_psd(H)
+        assert result['min_eigenval'] > 0, \
+            f"Min eigenvalue must be > 0, got {result['min_eigenval']:.4f}"
+
+    def test_per_component_all_convex(self):
+        """All per-component functions must be convex."""
+        from src.convexity_analysis import analyze_per_component_convexity
+        result = analyze_per_component_convexity(T=20, n_points=20)
+        assert result['all_convex'], \
+            f"All components must be convex, fraction={result['fraction_convex']:.3f}"
+
+    def test_fraction_convex_is_one(self):
+        """Fraction of convex components must be 1.0."""
+        from src.convexity_analysis import analyze_per_component_convexity
+        result = analyze_per_component_convexity(T=20, n_points=20)
+        assert result['fraction_convex'] == 1.0, \
+            f"Expected fraction=1.0, got {result['fraction_convex']}"
+
+    def test_diagonal_hessian_positive(self):
+        """Analytical diagonal Hessian entries must all be positive."""
+        from src.convexity_analysis import analytical_hessian_diagonal
+        beta = linear_schedule(20)
+        H_diag = analytical_hessian_diagonal(beta, d=1)
+        assert np.all(H_diag >= -1e-8), \
+            f"All diagonal entries must be >= 0, min={H_diag.min():.4f}"
+
+    def test_full_analysis_runs(self):
+        """Full convexity analysis must run without errors."""
+        from src.convexity_analysis import run_full_convexity_analysis
+        report = run_full_convexity_analysis(T=10)
+        required = {'hessian', 'psd_check', 'component_analysis', 'diagonal_hessian'}
+        assert required.issubset(report.keys())
