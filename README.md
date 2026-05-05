@@ -155,10 +155,10 @@ All solvers agree to within numerical precision on the final loss.
 
 | Test | Result |
 |------|--------|
-| Hessian PSD (min eigenvalue > 0) | ✅ min = 28.68 |
-| Per-component convexity (all 100 timesteps) | ✅ 100% convex |
-| Analytical diagonal Hessian positive | ✅ all entries > 0 |
-| All three solvers agree on optimum | ✅ loss = 124,502.26 at T=100 |
+| Hessian PSD (min eigenvalue > 0) | min = 28.68 |
+| Per-component convexity (all 100 timesteps) | 100% convex |
+| Analytical diagonal Hessian positive | all entries > 0 |
+| All three solvers agree on optimum | loss = 124,502.26 at T=100 |
 
 The condition number (~10¹⁰) explains why Frank-Wolfe outperforms PGD in iteration count - FW is condition-number independent while PGD converges at rate O(L/k) where L is the Lipschitz constant.
 
