@@ -66,7 +66,7 @@ optimal_noise_schedule/
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/kumaraaddy/optimal-noise-schedule.git
+git clone https://github.com/kumaraadya/optimal-noise-schedule.git
 cd optimal-noise-schedule
 
 # 2. Create and activate virtual environment
@@ -241,5 +241,5 @@ If you use this code, please cite:
 ```
 Aadya, Sadam P. (2026). Optimal Noise Schedule Learning for Diffusion Models
 via Convex Optimization. MSML 604 Course Project, University of Maryland.
-https://github.com/kumaraaddy/optimal-noise-schedule
+https://github.com/kumaraadya/optimal-noise-schedule.git
 ```
